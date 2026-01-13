@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>觀議課行動紀錄表 - 多巴胺風格</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fff9fe; /* 極淺粉背景 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 多巴胺觸控回饋 */
+        .touch-card {
+            transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .touch-card:active {
+            transform: scale(0.92);
+        }
+
+        /* 區塊鎖定/啟用樣式 */
+        .section-disabled {
+            opacity: 0.3;
+            pointer-events: none;
+            filter: grayscale(0.5) blur(1px);
+            transition: all 0.4s ease;
+        }
+
+        .section-active {
+            opacity: 1;
+            pointer-events: auto;
+            filter: grayscale(0) blur(0px);
+            transition: all 0.4s ease;
+        }
+
+        .clock-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        /* 自定義彈出視窗 */
+        #confirm-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: rgba(255, 105, 180, 0.2);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        
+        /* 橫向標籤捲動條樣式 */
+        .no-scrollbar::-webkit-scrollbar {
+            height: 4px;
+        }
+        .no-scrollbar::-webkit-scrollbar-thumb {
+            background: #fecdd3; /* rose-200 */
+            border-radius: 10px;
+        }
+
+        /* 漸層文字 */
+        .dopamine-gradient-text {
+            background: linear-gradient(90deg, #ff0080, #7928ca);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="pb-24">
+
+    <!-- Header & 控制列 -->
+    <header class="sticky-header bg-gradient-to-r from-rose-500 to-fuchsia-600 text-white shadow-xl">
+        <div class="max-w-2xl mx-auto p-4 flex justify-between items-center">
+            <h1 class="text-xl font-black flex items-center tracking-tighter">
+                <i class="fa-solid fa-face-smile-beam mr-2 text-yellow-300 animate-bounce"></i>觀議課行動紀錄
+            </h1>
+            <button onclick="saveData()" class="bg-yellow-300 hover:bg-yellow-400 text-rose-600 px-5 py-1.5 rounded-full text-sm font-bold shadow-md active:bg-white transition-all border-b-4 border-yellow-500 active:border-b-0">
+                <i class="fa-solid fa-star mr-1"></i>暫存草稿
+            </button>
+        </div>
+        
+        <div class="bg-purple-950/80 backdrop-blur-lg p-4 border-t border-white/20">
+            <div class="max-w-2xl mx-auto flex justify-center items-center gap-6 sm:gap-12">
+                <!-- 同步時鐘 -->
+                <div class="flex flex-col items-center">
+                    <span class="text-[9px] uppercase tracking-[0.2em] text-pink-300 font-black mb-0.5">Live Time</span>
+                    <div id="digital-clock" class="clock-font text-3xl font-bold text-white tracking-widest drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">00:00:00</div>
+                </div>
+                
+                <!-- Play / Stop 按鈕 -->
+                <button id="record-toggle" onclick="toggleRecording()" class="w-16 h-16 rounded-3xl bg-white flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.3)] touch-card transition-all duration-300 group">
+                    <i id="record-icon" class="fa-solid fa-play text-rose-500 text-3xl ml-1 group-hover:scale-110 transition-transform"></i>
+                </button>
+
+                <!-- 新觀議課按鈕 -->
+                <button onclick="askNewSession()" class="flex flex-col items-center justify-center w-16 h-16 rounded-3xl bg-emerald-400 text-white shadow-[0_8px_20px_rgba(16,185,129,0.3)] touch-card active:bg-emerald-500 border-b-4 border-emerald-600 active:border-b-0">
+                    <i class="fa-solid fa-wand-magic-sparkles text-2xl mb-0.5"></i>
+                    <span class="text-[10px] font-black uppercase">New</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-2xl mx-auto p-5 space-y-8">
+        
+        <!-- 1. 基本資訊 -->
+        <section class="bg-white rounded-[2.5rem] p-7 shadow-[0_15px_40px_rgba(255,182,193,0.2)] border-2 border-pink-100 space-y-5 animate-fade-in">
+            <h2 class="text-xl font-black text-rose-500 flex items-center">
+                <span class="w-2 h-8 bg-rose-500 rounded-full mr-3"></span>基本資訊
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <div>
+                    <label class="block text-xs font-black text-rose-300 uppercase tracking-widest mb-1 ml-1">授課教師</label>
+                    <input type="text" id="teacher" placeholder="教師姓名" class="w-full border-2 border-pink-50 rounded-2xl p-4 focus:ring-4 focus:ring-rose-200 focus:border-rose-400 focus:outline-none bg-rose-50/30 font-medium transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs font-black text-rose-300 uppercase tracking-widest mb-1 ml-1">觀課人</label>
+                    <input type="text" id="observer" placeholder="觀課者姓名" class="w-full border-2 border-pink-50 rounded-2xl p-4 focus:ring-4 focus:ring-rose-200 focus:border-rose-400 focus:outline-none bg-rose-50/30 font-medium transition-all">
+                </div>
+                <div>
+                    <label class="block text-xs font-black text-rose-300 uppercase tracking-widest mb-1 ml-1">年級</label>
+                    <div class="relative">
+                        <select id="grade" class="w-full border-2 border-pink-50 rounded-2xl p-4 bg-rose-50/30 focus:ring-4 focus:ring-rose-200 focus:outline-none appearance-none font-medium transition-all">
+                            <option value="">請選擇年級</option>
+                            <option value="一年級">一年級</option>
+                            <option value="二年級">二年級</option>
+                            <option value="三年級">三年級</option>
+                            <option value="四年級">四年級</option>
+                            <option value="五年級">五年級</option>
+                            <option value="六年級">六年級</option>
+                            <option value="七年級">七年級</option>
+                            <option value="八年級">八年級</option>
+                            <option value="九年級">九年級</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-rose-300 pointer-events-none"></i>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-black text-rose-300 uppercase tracking-widest mb-1 ml-1">科目</label>
+                    <input type="text" id="subject" placeholder="科目名稱" class="w-full border-2 border-pink-50 rounded-2xl p-4 focus:ring-4 focus:ring-rose-200 focus:border-rose-400 focus:outline-none bg-rose-50/30 font-medium transition-all">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-black text-rose-300 uppercase tracking-widest mb-1 ml-1">日期時間</label>
+                    <input type="datetime-local" id="lesson-time" class="w-full border-2 border-pink-50 rounded-2xl p-4 focus:ring-4 focus:ring-rose-200 focus:border-rose-400 focus:outline-none bg-rose-50/30 font-medium transition-all">
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 即時觀課紀錄區 -->
+        <section id="note-section" class="bg-white rounded-[2.5rem] p-7 shadow-[0_15px_40px_rgba(255,165,0,0.15)] border-2 border-orange-100 space-y-5 section-disabled animate-fade-in">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-orange-500 flex items-center">
+                    <span class="w-2 h-8 bg-orange-500 rounded-full mr-3"></span>即時紀錄
+                </h2>
+                <div id="recording-indicator" class="hidden">
+                    <div class="flex items-center gap-2 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
+                        <span class="relative flex h-3 w-3">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                        </span>
+                        <span class="text-[10px] font-black text-rose-500 uppercase tracking-wider">Recording</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 快速標記區：已更新標籤名稱 -->
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3">
+                <button onclick="addQuickNote('教師提問')" class="whitespace-nowrap bg-fuchsia-500 text-white px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-fuchsia-200 touch-card">教師提問</button>
+                <button onclick="addQuickNote('學生討論')" class="whitespace-nowrap bg-lime-400 text-lime-900 px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-lime-200 touch-card">學生討論</button>
+                <button onclick="addQuickNote('數位科技')" class="whitespace-nowrap bg-violet-500 text-white px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-violet-200 touch-card">數位科技</button>
+                <button onclick="addQuickNote('個案關注')" class="whitespace-nowrap bg-rose-500 text-white px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-rose-200 touch-card">個案關注</button>
+                <button onclick="addQuickNote('師生互動')" class="whitespace-nowrap bg-orange-400 text-white px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-orange-200 touch-card">師生互動</button>
+                <button onclick="addQuickNote('氛圍/成效')" class="whitespace-nowrap bg-cyan-500 text-white px-5 py-2.5 rounded-full text-xs font-black shadow-lg shadow-cyan-200 touch-card">氛圍/成效</button>
+            </div>
+
+            <div class="flex gap-3">
+                <input type="text" id="current-note" placeholder="記錄觀課重點..." class="flex-grow border-2 border-orange-50 rounded-2xl p-4 focus:ring-4 focus:ring-orange-200 focus:border-orange-400 focus:outline-none bg-orange-50/30 font-medium transition-all placeholder:text-orange-200">
+                <button onclick="addNote()" class="bg-orange-500 text-white w-14 h-14 rounded-2xl shadow-xl shadow-orange-200 active:bg-orange-600 flex items-center justify-center shrink-0 transition-transform active:scale-90">
+                    <i class="fa-solid fa-plus text-2xl"></i>
+                </button>
+            </div>
+
+            <div id="notes-list" class="max-h-96 overflow-y-auto space-y-4 mt-6 no-scrollbar">
+                <p class="text-center text-orange-200 text-sm py-10 italic font-medium">✨ 準備好寫下第一筆紀錄了嗎？ ✨</p>
+            </div>
+        </section>
+
+        <!-- 3. 議課與回饋區 -->
+        <section id="feedback-section" class="bg-white rounded-[2.5rem] p-7 shadow-[0_15px_40_rgba(6,182,212,0.15)] border-2 border-cyan-100 space-y-6 animate-fade-in">
+            <h2 class="text-xl font-black text-cyan-500 flex items-center">
+                <span class="w-2 h-8 bg-cyan-500 rounded-full mr-3"></span>議課與回饋
+            </h2>
+            <div>
+                <label class="block text-xs font-black text-cyan-300 uppercase tracking-widest mb-1 ml-1">教學優點</label>
+                <textarea id="strengths" rows="3" class="w-full border-2 border-cyan-50 rounded-2xl p-4 focus:ring-4 focus:ring-cyan-200 focus:border-cyan-400 focus:outline-none bg-cyan-50/30 font-medium transition-all" placeholder="教學中有哪些亮點？"></textarea>
+            </div>
+            <div>
+                <label class="block text-xs font-black text-cyan-300 uppercase tracking-widest mb-1 ml-1">調整建議</label>
+                <textarea id="suggestions" rows="3" class="w-full border-2 border-cyan-50 rounded-2xl p-4 focus:ring-4 focus:ring-cyan-200 focus:border-cyan-400 focus:outline-none bg-cyan-50/30 font-medium transition-all" placeholder="有哪些可以調整的地方？"></textarea>
+            </div>
+            <button onclick="generateBFile()" class="w-full py-5 bg-gradient-to-r from-cyan-400 to-blue-500 text-white rounded-[1.5rem] font-black text-lg shadow-xl shadow-cyan-200 touch-card flex items-center justify-center transition-all border-b-4 border-blue-700 active:border-b-0">
+                <i class="fa-solid fa-paper-plane mr-3 text-xl"></i>送出回饋紀錄 (B)
+            </button>
+        </section>
+
+        <!-- 4. 觀查紀錄匯出清單 -->
+        <section id="observation-files" class="bg-white rounded-[2.5rem] p-7 shadow-[0_15px_40px_rgba(139,92,246,0.1)] border-2 border-purple-100 space-y-5 animate-fade-in">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-purple-500 flex items-center">
+                    <span class="w-2 h-8 bg-purple-500 rounded-full mr-3"></span>觀查紀錄匯出
+                </h2>
+                <button onclick="askClearAll()" class="text-[10px] font-black bg-rose-50 text-rose-500 px-4 py-2 rounded-full border border-rose-100 active:bg-rose-500 active:text-white transition-colors uppercase tracking-widest">
+                    <i class="fa-solid fa-bomb mr-1"></i>Clear All
+                </button>
+            </div>
+            <div id="file-list" class="space-y-4">
+                <p id="no-file-hint" class="text-center text-purple-200 text-sm py-8 italic font-medium">等待檔案生成...</p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 自定義對話視窗 -->
+    <div id="confirm-modal" class="flex">
+        <div class="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl animate-fade-in mx-4 border-4 border-pink-200 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pink-400 via-yellow-400 to-cyan-400"></div>
+            <div class="text-center mb-8">
+                <div id="modal-icon-container" class="w-20 h-20 bg-rose-100 text-rose-500 rounded-[2rem] flex items-center justify-center mx-auto mb-6 rotate-12">
+                    <i id="modal-icon" class="fa-solid fa-triangle-exclamation text-3xl"></i>
+                </div>
+                <h3 id="modal-title" class="text-2xl font-black text-gray-800 mb-3">確認執行？</h3>
+                <p id="modal-message" class="text-gray-500 font-medium leading-relaxed">這個動作無法復原，您確定要繼續嗎？</p>
+            </div>
+            <div class="flex flex-col gap-3">
+                <button id="modal-confirm-btn" class="w-full py-5 bg-rose-500 text-white rounded-2xl font-black shadow-lg shadow-rose-200 active:scale-95 transition-transform">確定執行！</button>
+                <button onclick="closeModal()" class="w-full py-4 text-gray-400 font-bold hover:text-gray-600 transition-colors active:scale-95">先不要</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 訊息提示 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gradient-to-r from-gray-900 to-purple-950 text-white px-8 py-4 rounded-3xl shadow-2xl transition-all opacity-0 pointer-events-none z-50 text-sm font-black tracking-wider flex items-center gap-3">
+        <i class="fa-solid fa-check-circle text-lime-400 text-lg"></i>
+        <span>SUCCESS!</span>
+    </div>
+
+    <script>
+        let isRecording = false;
+        let notes = []; 
+
+        window.onload = () => {
+            updateClock();
+            setInterval(updateClock, 1000);
+            resetLessonTime();
+            loadDraft();
+        };
+
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            const el = document.getElementById('digital-clock');
+            if (el) el.innerText = `${h}:${m}:${s}`;
+        }
+
+        function resetLessonTime() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            const el = document.getElementById('lesson-time');
+            if (el) el.value = now.toISOString().slice(0, 16);
+        }
+
+        function getTimestamp() {
+            const now = new Date();
+            const Y = now.getFullYear();
+            const M = String(now.getMonth() + 1).padStart(2, '0');
+            const D = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            return `${Y}${M}${D}${h}${m}`;
+        }
+
+        function askNewSession() {
+            openModal(
+                "開啟新觀議課", 
+                "確定要開始新的紀錄嗎？現有的填寫內容將被清空（匯出的檔案將保留）。", 
+                "fa-wand-magic-sparkles", "bg-emerald-100", "text-emerald-500", "bg-emerald-500",
+                () => {
+                    if (isRecording) toggleRecording();
+                    clearFormData();
+                    showToast("已重置欄位 ✨");
+                }
+            );
+        }
+
+        function clearFormData() {
+            document.getElementById('teacher').value = "";
+            document.getElementById('observer').value = "";
+            document.getElementById('grade').value = "";
+            document.getElementById('subject').value = "";
+            document.getElementById('strengths').value = "";
+            document.getElementById('suggestions').value = "";
+            resetLessonTime();
+            notes = [];
+            renderNotes();
+            saveData(); 
+        }
+
+        function toggleRecording() {
+            isRecording = !isRecording;
+            const btn = document.getElementById('record-toggle');
+            const icon = document.getElementById('record-icon');
+            const noteSec = document.getElementById('note-section');
+            const indicator = document.getElementById('recording-indicator');
+            const noteInput = document.getElementById('current-note');
+
+            if (isRecording) {
+                icon.className = 'fa-solid fa-square text-rose-500 text-3xl';
+                btn.classList.add('ring-8', 'ring-rose-100');
+                noteSec.classList.replace('section-disabled', 'section-active');
+                indicator.classList.remove('hidden');
+                noteInput.placeholder = '輸入觀察細節...';
+                showToast("開始紀錄 🚀");
+            } else {
+                icon.className = 'fa-solid fa-play text-rose-500 text-3xl ml-1';
+                btn.classList.remove('ring-8', 'ring-rose-100');
+                noteSec.classList.replace('section-active', 'section-disabled');
+                indicator.classList.add('hidden');
+                noteInput.placeholder = '請按 Play 開始...';
+                
+                showToast("錄製結束，正在生成 A 檔 🎁");
+                generateAFile();
+            }
+        }
+
+        function generateAFile() {
+            const ts = getTimestamp();
+            const filename = `${ts}A.txt`;
+            const teacher = document.getElementById('teacher').value || "未填寫";
+            const observer = document.getElementById('observer').value || "未填寫";
+            const grade = document.getElementById('grade').value || "未選";
+            const subject = document.getElementById('subject').value || "未填寫";
+            const time = document.getElementById('lesson-time').value || "未填寫";
+
+            let content = `🌈 觀議課 A 檔案 - 觀課紀錄 🌈\n\n`;
+            content += `授課教師：${teacher}\n觀課人員：${observer}\n授課年級：${grade}\n授課科目：${subject}\n觀課時間：${time}\n\n`;
+            content += `【即時紀錄內容】\n`;
+            if (notes.length === 0) content += "目前無筆記內容。\n";
+            else [...notes].reverse().forEach(n => { content += `[${n.time}] ${n.text}\n`; });
+
+            const blob = new Blob(["\ufeff" + content], { type: 'text/plain;charset=utf-8' });
+            addFileToUI(filename, URL.createObjectURL(blob));
+        }
+
+        function generateBFile() {
+            const ts = getTimestamp();
+            const filename = `${ts}B.txt`;
+            const strengths = document.getElementById('strengths').value || "無紀錄";
+            const suggestions = document.getElementById('suggestions').value || "無紀錄";
+
+            let content = `✨ 觀議課 B 檔案 - 議課回饋 ✨\n\n`;
+            content += `【教學優點】\n${strengths}\n\n`;
+            content += `【調整建議】\n${suggestions}\n\n`;
+            content += `===========================\n產生日期：${new Date().toLocaleString()}\n`;
+
+            const blob = new Blob(["\ufeff" + content], { type: 'text/plain;charset=utf-8' });
+            addFileToUI(filename, URL.createObjectURL(blob));
+            showToast("回饋 B 檔生成成功！💎");
+        }
+
+        function addFileToUI(name, url) {
+            const list = document.getElementById('file-list');
+            const hint = document.getElementById('no-file-hint');
+            if (hint) hint.remove();
+
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between bg-white p-5 rounded-[2rem] border-2 border-purple-50 shadow-sm animate-fade-in file-item group hover:border-purple-200 transition-all';
+            div.innerHTML = `
+                <div class="flex items-center gap-4 overflow-hidden">
+                    <div class="bg-purple-100 text-purple-500 p-3 rounded-[1.2rem] shrink-0 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                    <p class="text-sm font-black text-purple-700 font-mono truncate">${name}</p>
+                </div>
+                <div class="flex gap-2 shrink-0 ml-4">
+                    <a href="${url}" download="${name}" class="p-3 text-cyan-500 hover:bg-cyan-50 rounded-xl transition-all active:scale-90">
+                        <i class="fa-solid fa-circle-arrow-down text-xl"></i>
+                    </a>
+                    <button onclick="askDeleteFile(this)" class="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all active:scale-90">
+                        <i class="fa-solid fa-circle-xmark text-xl"></i>
+                    </button>
+                </div>
+            `;
+            list.prepend(div);
+        }
+
+        function askDeleteFile(btn) {
+            const row = btn.closest('.file-item');
+            const name = row.querySelector('p').innerText;
+            openModal("刪除檔案", `要刪除「${name}」嗎？`, "fa-trash-can", "bg-rose-100", "text-rose-500", "bg-rose-500", () => {
+                row.remove();
+                checkIfEmpty();
+                showToast("已刪除紀錄 🧹");
+            });
+        }
+
+        function askClearAll() {
+            const list = document.getElementById('file-list');
+            if (list.querySelectorAll('.file-item').length === 0) return;
+            openModal("清除所有紀錄", "確定要清空清單中的所有檔案嗎？", "fa-broom", "bg-rose-100", "text-rose-500", "bg-rose-500", () => {
+                list.innerHTML = "";
+                checkIfEmpty();
+                showToast("清單已清空 🌬️");
+            });
+        }
+
+        function checkIfEmpty() {
+            const list = document.getElementById('file-list');
+            if (list.children.length === 0) {
+                list.innerHTML = `<p id="no-file-hint" class="text-center text-purple-200 text-sm py-8 italic font-medium">等待檔案生成...</p>`;
+            }
+        }
+
+        function openModal(title, message, icon, iconBg, iconColor, btnBg, onConfirm) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            const iconEl = document.getElementById('modal-icon');
+            const iconCon = document.getElementById('modal-icon-container');
+            iconEl.className = `fa-solid ${icon} text-3xl`;
+            iconCon.className = `w-20 h-20 ${iconBg} ${iconColor} rounded-[2rem] flex items-center justify-center mx-auto mb-6 rotate-12`;
+            const cBtn = document.getElementById('modal-confirm-btn');
+            cBtn.className = `w-full py-5 ${btnBg} text-white rounded-2xl font-black shadow-lg active:scale-95 transition-transform`;
+            document.getElementById('confirm-modal').style.display = 'flex';
+            const newBtn = cBtn.cloneNode(true);
+            cBtn.parentNode.replaceChild(newBtn, cBtn);
+            newBtn.onclick = () => { onConfirm(); closeModal(); };
+        }
+
+        function closeModal() { document.getElementById('confirm-modal').style.display = 'none'; }
+
+        function addQuickNote(tag) {
+            if(!isRecording) return;
+            const input = document.getElementById('current-note');
+            if (input) {
+                input.value = tag + ": ";
+                input.focus();
+            }
+        }
+
+        function addNote() {
+            if(!isRecording) return;
+            const input = document.getElementById('current-note');
+            const text = input ? input.value.trim() : "";
+            if (!text) return;
+            const time = new Date().toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            notes.unshift({ id: Date.now(), time, text });
+            renderNotes();
+            if (input) input.value = '';
+        }
+
+        function removeNote(id) { notes = notes.filter(n => n.id !== id); renderNotes(); }
+
+        function renderNotes() {
+            const list = document.getElementById('notes-list');
+            if (!list) return;
+            if (notes.length === 0) {
+                list.innerHTML = `<p class="text-center text-orange-200 text-sm py-10 italic font-medium">✨ 準備好寫下第一筆紀錄了嗎？ ✨</p>`;
+                return;
+            }
+            list.innerHTML = notes.map(n => `
+                <div class="flex items-start gap-4 bg-orange-50/50 p-5 rounded-[1.8rem] border-2 border-orange-100 shadow-sm animate-fade-in group">
+                    <span class="text-orange-500 font-mono text-[10px] font-black mt-1 bg-white px-3 py-1 rounded-full shadow-sm shrink-0">${n.time}</span>
+                    <p class="flex-grow text-sm text-orange-900 leading-relaxed font-medium">${n.text}</p>
+                    <button onclick="removeNote(${n.id})" class="text-orange-200 hover:text-rose-500 transition-colors p-1 active:scale-75"><i class="fa-solid fa-circle-minus text-lg"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function saveData() {
+            const data = {
+                teacher: document.getElementById('teacher').value,
+                observer: document.getElementById('observer').value,
+                grade: document.getElementById('grade').value,
+                subject: document.getElementById('subject').value,
+                notes: notes,
+                strengths: document.getElementById('strengths').value,
+                suggestions: document.getElementById('suggestions').value,
+                time: document.getElementById('lesson-time').value
+            };
+            localStorage.setItem('observation_v3_dopamine', JSON.stringify(data));
+            showToast("紀錄已存入大腦快取 🧠✨");
+        }
+
+        function loadDraft() {
+            const saved = localStorage.getItem('observation_v3_dopamine');
+            if (!saved) return;
+            try {
+                const d = JSON.parse(saved);
+                document.getElementById('teacher').value = d.teacher || "";
+                document.getElementById('observer').value = d.observer || "";
+                document.getElementById('grade').value = d.grade || "";
+                document.getElementById('subject').value = d.subject || "";
+                document.getElementById('strengths').value = d.strengths || "";
+                document.getElementById('suggestions').value = d.suggestions || "";
+                if(d.time) document.getElementById('lesson-time').value = d.time;
+                notes = d.notes || [];
+                renderNotes();
+            } catch(e) {}
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            if (toast) {
+                toast.querySelector('span').innerText = msg;
+                toast.classList.replace('opacity-0', 'opacity-100');
+                toast.classList.add('translate-y-[-10px]');
+                setTimeout(() => { 
+                    toast.classList.replace('opacity-100', 'opacity-0'); 
+                    toast.classList.remove('translate-y-[-10px]');
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
